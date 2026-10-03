@@ -1,224 +1,24 @@
-﻿using System;
+using DesafioTargetSistemas.Application.Services;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using static DesafioTargetSistemas.Domain.ClassesQuestao1;
+using static DesafioTargetSistemas.Domain.ClassesQuestao2;
 
 namespace Desafio;
-
-public class Venda
-{
-    [JsonPropertyName("vendedor")]
-    public string Vendedor { get; set; } = string.Empty;
-
-    [JsonPropertyName("valor")]
-    public decimal Valor { get; set; }
-}
-
-public class BaseVendasJson
-{
-    [JsonPropertyName("vendas")]
-    public List<Venda> Vendas { get; set; } = new();
-}
-
-public class ResumoComissaoVendedor
-{
-    public string Vendedor { get; set; } = string.Empty;
-    public int QuantidadeVendas { get; set; }
-    public decimal TotalVendas { get; set; }
-    public decimal TotalComissao { get; set; }
-}
-
-public class ServicoComissao
-{
-    public decimal ObterTaxaComissao(decimal valorVenda)
-    {
-        if (valorVenda < 100.00m) return 0.0m;
-        if (valorVenda < 500.00m) return 0.01m;
-        return 0.05m;
-    }
-
-    public decimal CalcularComissaoVenda(decimal valorVenda)
-    {
-        return valorVenda * ObterTaxaComissao(valorVenda);
-    }
-
-    public List<ResumoComissaoVendedor> GerarRelatorioComissoes(IEnumerable<Venda> vendas)
-    {
-        return vendas
-            .GroupBy(v => v.Vendedor)
-            .Select(g => new ResumoComissaoVendedor
-            {
-                Vendedor = g.Key,
-                QuantidadeVendas = g.Count(),
-                TotalVendas = g.Sum(v => v.Valor),
-                TotalComissao = g.Sum(v => CalcularComissaoVenda(v.Valor))
-            })
-            .OrderByDescending(r => r.TotalVendas)
-            .ToList();
-    }
-}
-
-public enum TipoMovimentacao
-{
-    Entrada = 1,
-    Saida = 2
-}
-
-public class Produto
-{
-    [JsonPropertyName("codigoProduto")]
-    public int Codigo { get; set; }
-
-    [JsonPropertyName("descricaoProduto")]
-    public string Descricao { get; set; } = string.Empty;
-
-    [JsonPropertyName("estoque")]
-    public int QuantidadeEstoque { get; set; }
-
-    public void CreditarEstoque(int quantidade)
-    {
-        if (quantidade <= 0)
-            throw new ArgumentOutOfRangeException(nameof(quantidade), "A quantidade de entrada deve ser maior que zero.");
-
-        QuantidadeEstoque += quantidade;
-    }
-
-    public void DebitarEstoque(int quantidade)
-    {
-        if (quantidade <= 0)
-            throw new ArgumentOutOfRangeException(nameof(quantidade), "A quantidade de saída deve ser maior que zero.");
-
-        if (QuantidadeEstoque < quantidade)
-            throw new InvalidOperationException($"Saldo insuficiente para {Descricao}. Disponível: {QuantidadeEstoque}, Solicitado: {quantidade}.");
-
-        QuantidadeEstoque -= quantidade;
-    }
-}
-
-public class BaseEstoqueJson
-{
-    [JsonPropertyName("estoque")]
-    public List<Produto> Produtos { get; set; } = new();
-}
-
-public class RegistroMovimentacao
-{
-    public int Id { get; set; }
-    public int CodigoProduto { get; set; }
-    public string DescricaoProduto { get; set; } = string.Empty;
-    public TipoMovimentacao Tipo { get; set; }
-    public string DescricaoOperacao { get; set; } = string.Empty;
-    public int Quantidade { get; set; }
-    public int EstoqueFinal { get; set; }
-    public DateTime DataHora { get; set; }
-}
-
-public class ServicoEstoque
-{
-    private readonly Dictionary<int, Produto> _produtos;
-    private readonly List<RegistroMovimentacao> _historico = new();
-    private int _sequencialId = 1;
-
-    public ServicoEstoque(IEnumerable<Produto> produtosIniciais)
-    {
-        _produtos = produtosIniciais.ToDictionary(p => p.Codigo);
-    }
-
-    public RegistroMovimentacao RegistrarEntrada(int codigoProduto, int quantidade, string descricao)
-    {
-        return Movimentar(codigoProduto, quantidade, TipoMovimentacao.Entrada, descricao);
-    }
-
-    public RegistroMovimentacao RegistrarSaida(int codigoProduto, int quantidade, string descricao)
-    {
-        return Movimentar(codigoProduto, quantidade, TipoMovimentacao.Saida, descricao);
-    }
-
-    private RegistroMovimentacao Movimentar(int codigoProduto, int quantidade, TipoMovimentacao tipo, string descricao)
-    {
-        if (!_produtos.TryGetValue(codigoProduto, out var produto))
-            throw new KeyNotFoundException($"Produto {codigoProduto} não encontrado.");
-
-        if (tipo == TipoMovimentacao.Entrada)
-            produto.CreditarEstoque(quantidade);
-        else
-            produto.DebitarEstoque(quantidade);
-
-        var registro = new RegistroMovimentacao
-        {
-            Id = _sequencialId++,
-            CodigoProduto = produto.Codigo,
-            DescricaoProduto = produto.Descricao,
-            Tipo = tipo,
-            DescricaoOperacao = descricao,
-            Quantidade = quantidade,
-            EstoqueFinal = produto.QuantidadeEstoque,
-            DataHora = DateTime.Now
-        };
-
-        _historico.Add(registro);
-        return registro;
-    }
-
-    public IReadOnlyList<RegistroMovimentacao> ObterHistorico() => _historico.AsReadOnly();
-}
-
-public class ResultadoCalculoJuros
-{
-    public decimal ValorOriginal { get; set; }
-    public DateTime DataVencimento { get; set; }
-    public DateTime DataCalculo { get; set; }
-    public int DiasAtraso { get; set; }
-    public decimal TaxaDiariaPercentual { get; set; }
-    public decimal ValorJuros { get; set; }
-    public decimal ValorTotalFinal { get; set; }
-    public bool EstaEmAtraso => DiasAtraso > 0;
-}
-
-public class ServicoCalculoCobranca
-{
-    private const decimal TaxaMultaDiaria = 0.025m;
-
-    public ResultadoCalculoJuros Calcular(decimal valor, DateTime dataVencimento, DateTime? dataReferencia = null)
-    {
-        if (valor < 0)
-            throw new ArgumentOutOfRangeException(nameof(valor), "O valor não pode ser negativo.");
-
-        DateTime hoje = (dataReferencia ?? DateTime.Today).Date;
-        DateTime vencimento = dataVencimento.Date;
-
-        int diasAtraso = 0;
-        decimal valorJuros = 0m;
-
-        if (hoje > vencimento)
-        {
-            diasAtraso = (hoje - vencimento).Days;
-            valorJuros = valor * (TaxaMultaDiaria * diasAtraso);
-        }
-
-        return new ResultadoCalculoJuros
-        {
-            ValorOriginal = valor,
-            DataVencimento = vencimento,
-            DataCalculo = hoje,
-            DiasAtraso = diasAtraso,
-            TaxaDiariaPercentual = TaxaMultaDiaria * 100m,
-            ValorJuros = valorJuros,
-            ValorTotalFinal = valor + valorJuros
-        };
-    }
-}
-
+ 
 class Program
 {
     static void Main()
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
-        var cultura = new CultureInfo("pt-BR");
+        var cultura = new CultureInfo("pt-BR"); //Forcei a cultura para pt-BR para exibir corretamente os valores monetários por garantia.
 
-        // 1 Calculo de comissoes
+        #region Questão 1
+        //  1 Calculo de comissoes
         const string jsonVendas = """
         {
           "vendas": [
@@ -261,19 +61,9 @@ class Program
           ]
         }
         """;
+        #endregion
 
-        Console.WriteLine("QUestao 1 > Relatorio de comissoes:");
-        var baseVendas = JsonSerializer.Deserialize<BaseVendasJson>(jsonVendas)!;
-        var servicoComissao = new ServicoComissao();
-        var relatorio = servicoComissao.GerarRelatorioComissoes(baseVendas.Vendas);
-
-        foreach (var item in relatorio)
-        {
-            Console.WriteLine($"Vendedor: {item.Vendedor,-16} | Vendas: {item.QuantidadeVendas,2} | " +
-                              $"Total: {item.TotalVendas.ToString("C", cultura),12} | " +
-                              $"Comissao: {item.TotalComissao.ToString("C", cultura),10}");
-        }
-
+        #region Questão 2
         // 2  Movimentacoes de estoque
         const string jsonEstoque = """
         {
@@ -287,32 +77,179 @@ class Program
         }
         """;
 
-        Console.WriteLine("\n QUestao 2 > Movimentacoes de estoque:");
         var baseEstoque = JsonSerializer.Deserialize<BaseEstoqueJson>(jsonEstoque)!;
         var servicoEstoque = new ServicoEstoque(baseEstoque.Produtos);
+        #endregion
 
-        var m1 = servicoEstoque.RegistrarEntrada(101, 50, "Entrada NF 4920");
-        Console.WriteLine($"[ID: {m1.Id}] {m1.Tipo,-7} | Produto: {m1.DescricaoProduto,-25} | Qtd: {m1.Quantidade,3} | Saldo final: {m1.EstoqueFinal,3} | Motivo: {m1.DescricaoOperacao}");
-
-        var m2 = servicoEstoque.RegistrarSaida(102, 20, "Pedido 8831");
-        Console.WriteLine($"[ID: {m2.Id}] {m2.Tipo,-7} | Produto: {m2.DescricaoProduto,-25} | Qtd: {m2.Quantidade,3} | Saldo final: {m2.EstoqueFinal,3} | Motivo: {m2.DescricaoOperacao}");
-
-        var m3 = servicoEstoque.RegistrarSaida(104, 50, "Transferencia filial");
-        Console.WriteLine($"[ID: {m3.Id}] {m3.Tipo,-7} | Produto: {m3.DescricaoProduto,-25} | Qtd: {m3.Quantidade,3} | Saldo final: {m3.EstoqueFinal,3} | Motivo: {m3.DescricaoOperacao}");
-
-        var m4 = servicoEstoque.RegistrarEntrada(103, 15, "Devolçao cliente");
-        Console.WriteLine($"[ID: {m4.Id}] {m4.Tipo,-7} | Produto: {m4.DescricaoProduto,-25} | Qtd: {m4.Quantidade,3} | Saldo final: {m4.EstoqueFinal,3} | Motivo: {m4.DescricaoOperacao}");
-
+        #region Questão 3
         // 3  Calculo de juros
-        Console.WriteLine("\nQUestao 3  > Calculo de juros:");
         var servicoCobranca = new ServicoCalculoCobranca();
+        #endregion
 
-        var b1 = servicoCobranca.Calcular(1000.00m, DateTime.Today.AddDays(-10));
-        Console.WriteLine($"Valor: {b1.ValorOriginal.ToString("C", cultura)} | Vencimento: {b1.DataVencimento:dd/MM/yyyy} | Atraso: {b1.DiasAtraso,2} dias | Juros: {b1.ValorJuros.ToString("C", cultura)} | Total: {b1.ValorTotalFinal.ToString("C", cultura)}");
+        while (true)
+        {
+            Console.WriteLine("\nEscolha uma opcao:");
+            Console.WriteLine("1 - QUestao 1");
+            Console.WriteLine("2 - QUestao 2");
+            Console.WriteLine("3 - QUestao 3");
+            Console.WriteLine("0 - Sair");
+            Console.Write("Opcao: ");
+            var opcao = Console.ReadLine();
 
-        var b2 = servicoCobranca.Calcular(2500.50m, DateTime.Today);
-        Console.WriteLine($"Valor: {b2.ValorOriginal.ToString("C", cultura)} | Vencimento: {b2.DataVencimento:dd/MM/yyyy} | Em dia   | Juros: {b2.ValorJuros.ToString("C", cultura)} | Total: {b2.ValorTotalFinal.ToString("C", cultura)}");
+            switch (opcao)
+            {
+                case "1":
+                    Console.WriteLine("QUestao 1 > Relatorio de comissoes:");
+                    var baseVendas = JsonSerializer.Deserialize<BaseVendasJson>(jsonVendas)!;
+                    var servicoComissao = new ServicoComissao();
+                    var relatorio = servicoComissao.GerarRelatorioComissoes(baseVendas.Vendas);
 
-        Console.ReadLine();
+                    foreach (var item in relatorio)
+                    {
+                        Console.WriteLine($"Vendedor: {item.Vendedor,-16} | Vendas: {item.QuantidadeVendas,2} | " +
+                                          $"Total: {item.TotalVendas.ToString("C", cultura),12} | " +
+                                          $"Comissao: {item.TotalComissao.ToString("C", cultura),10}");
+                    }
+
+                    Console.WriteLine("\nPressione qualquer tecla para voltar para as 3 opcoes...");
+                    if (Console.IsInputRedirected)
+                        Console.ReadLine();
+                    else
+                        Console.ReadKey();
+                    break;
+
+                case "2":
+                    while (true)
+                    {
+                        Console.WriteLine("\n QUestao 2 > Movimentacoes de estoque:");
+                        foreach (var item in baseEstoque.Produtos)
+                        {
+                            Console.WriteLine($"Codigo: {item.Codigo} | Produto: {item.Descricao,-25} | Estoque: {item.QuantidadeEstoque,3}");
+                        }
+
+                        Console.Write("\nDigite o codigo do produto (ou 'voltar' para voltar para as 3 opcoes): ");
+                        var entradaCodigo = Console.ReadLine();
+                        if (string.IsNullOrWhiteSpace(entradaCodigo) || string.Equals(entradaCodigo, "voltar", StringComparison.OrdinalIgnoreCase) || entradaCodigo == "0" || string.Equals(entradaCodigo, "v", StringComparison.OrdinalIgnoreCase))
+                        {
+                            break;
+                        }
+
+                        if (!int.TryParse(entradaCodigo, out int codigoProduto))
+                        {
+                            Console.WriteLine("Codigo invalido.");
+                            continue;
+                        }
+                        var existe = baseEstoque.Produtos.FirstOrDefault(p => p.Codigo == codigoProduto);
+
+                        if (existe == null)
+                        {
+                            Console.WriteLine("Produto nã0o encontrado.");
+                            continue;
+                        }
+
+                        Console.Write("Tipo da movimentacao (1 - Entrada, 2 - Saida): ");
+                        var tipo = Console.ReadLine();
+                        if (string.Equals(tipo, "voltar", StringComparison.OrdinalIgnoreCase))
+                        {
+                            break;
+                        }
+
+                        Console.Write("Quantidade: ");
+                        var entradaQtd = Console.ReadLine();
+                        if (string.Equals(entradaQtd, "voltar", StringComparison.OrdinalIgnoreCase))
+                        {
+                            break;
+                        }
+
+                        if (!int.TryParse(entradaQtd, out int quantidade))
+                        {
+                            Console.WriteLine("Quantidade invalida.");
+                            continue;
+                        }
+
+                        Console.Write("Descricao da operacao: ");
+                        var descricao = Console.ReadLine();
+                        if (string.Equals(descricao, "voltar", StringComparison.OrdinalIgnoreCase))
+                        {
+                            break;
+                        }
+
+                        try
+                        {
+                            RegistroMovimentacao m;
+                            if (tipo == "1" || string.Equals(tipo, "entrada", StringComparison.OrdinalIgnoreCase))
+                            {
+                                m = servicoEstoque.RegistrarEntrada(codigoProduto, quantidade, descricao ?? "");
+                            }
+                            else if (tipo == "2" || string.Equals(tipo, "saida", StringComparison.OrdinalIgnoreCase))
+                            {
+                                m = servicoEstoque.RegistrarSaida(codigoProduto, quantidade, descricao ?? "");
+                            }
+                            else
+                            {
+                                Console.WriteLine("Tipo invalido.");
+                                continue;
+                            }
+
+                            Console.WriteLine($"[ID: {m.Id}] {m.Tipo,-7} | Produto: {m.DescricaoProduto,-25} | Qtd: {m.Quantidade,3} | Saldo final: {m.EstoqueFinal,3} | Motivo: {m.DescricaoOperacao}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(ex.Message);
+                        }
+                    }
+                    break;
+
+                case "3":
+                    while (true)
+                    {
+                        Console.WriteLine("\nQUestao 3  > Calculo de juros:");
+                        Console.Write("Digite o valor (ou 'voltar' para voltar para as 3 opcoes): ");
+                        var entradaValor = Console.ReadLine();
+                        if (string.IsNullOrWhiteSpace(entradaValor) || string.Equals(entradaValor, "voltar", StringComparison.OrdinalIgnoreCase) || entradaValor == "0" || string.Equals(entradaValor, "v", StringComparison.OrdinalIgnoreCase))
+                        {
+                            break;
+                        }
+
+                        if (!decimal.TryParse(entradaValor.Replace(',', '.'), CultureInfo.InvariantCulture, out decimal valor))
+                        {
+                            Console.WriteLine("Valor invalido.");
+                            continue;
+                        }
+
+                        Console.Write("Digite a data de vencimento (dd/MM/yyyy): ");
+                        var entradaData = Console.ReadLine();
+                        if (string.Equals(entradaData, "voltar", StringComparison.OrdinalIgnoreCase))
+                        {
+                            break;
+                        }
+
+                        if (!DateTime.TryParse(entradaData, cultura, DateTimeStyles.None, out DateTime dataVencimento))
+                        {
+                            Console.WriteLine("Data invalida.");
+                            continue;
+                        }
+
+                        try
+                        {
+                            var res = servicoCobranca.Calcular(valor, dataVencimento);
+                            var statusAtraso = res.EstaEmAtraso ? $"Atraso: {res.DiasAtraso,2} dias" : "Em dia  ";
+                            Console.WriteLine($"Valor: {res.ValorOriginal.ToString("C", cultura)} | Vencimento: {res.DataVencimento:dd/MM/yyyy} | {statusAtraso} | Juros: {res.ValorJuros.ToString("C", cultura)} | Total: {res.ValorTotalFinal.ToString("C", cultura)}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(ex.Message);
+                        }
+                    }
+                    break;
+
+                case "0":
+                    return;
+
+                default:
+                    Console.WriteLine("Opcao invalida.");
+                    break;
+            }
+        }
     }
 }
