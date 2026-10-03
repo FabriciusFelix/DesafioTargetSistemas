@@ -312,5 +312,7 @@ class Program
 
         var b2 = servicoCobranca.Calcular(2500.50m, DateTime.Today);
         Console.WriteLine($"Valor: {b2.ValorOriginal.ToString("C", cultura)} | Vencimento: {b2.DataVencimento:dd/MM/yyyy} | Em dia   | Juros: {b2.ValorJuros.ToString("C", cultura)} | Total: {b2.ValorTotalFinal.ToString("C", cultura)}");
+
+        Console.ReadLine();
     }
 }
